@@ -1,0 +1,93 @@
+name: libs-gnu-linux
+
+on:
+  workflow_dispatch:
+
+jobs:
+  tdlib:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y gperf cmake ninja-build zlib1g-dev libssl-dev
+
+      - name: Clone TDLib
+        run: git clone --depth 1 https://github.com/tdlib/td.git
+
+      - name: Build TDLib
+        run: |
+          set -e
+          cd td && mkdir build && cd build
+          cmake -GNinja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install" ..
+          cmake --build . --target install -j"$(nproc)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tdlib-linux-x86_64
+          path: install
+
+  skia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang python3 git \
+            libfontconfig1-dev libgl1-mesa-dev libglu1-mesa-dev libx11-dev
+
+      - name: Fetch Skia
+        run: |
+          set -e
+          git clone --depth 1 https://skia.googlesource.com/skia.git
+          cd skia
+          python3 tools/git-sync-deps
+
+      - name: Build Skia
+        run: |
+          set -e
+          cd skia
+          bin/gn gen out/Release --args='
+            is_official_build=true
+            is_component_build=false
+            cc="clang" cxx="clang++"
+            skia_use_gl=true
+            skia_use_system_expat=false
+            skia_use_system_freetype2=false
+            skia_use_system_harfbuzz=false
+            skia_use_system_icu=false
+            skia_use_system_libjpeg_turbo=false
+            skia_use_system_libpng=false
+            skia_use_system_libwebp=false
+            skia_use_system_zlib=false
+            skia_use_freetype=true
+            skia_use_harfbuzz=true
+            skia_use_icu=true
+            skia_enable_skshaper=true
+            skia_enable_skunicode=true
+            skia_enable_skparagraph=true
+            skia_enable_pdf=false
+            skia_enable_tools=false
+          '
+          # Если имена целей в твоей версии Skia другие, смотри: bin/gn ls out/Release | grep -E "sk(ia|shaper|unicode|paragraph)"
+          ninja -C out/Release skia skshaper skunicode_core skunicode_icu skparagraph
+
+      - name: Package
+        run: |
+          set -e
+          mkdir -p pkg/lib pkg/include
+          cd skia
+          cp out/Release/*.a ../pkg/lib/
+          cp -r include ../pkg/include/skia
+          mkdir -p ../pkg/include/modules
+          for m in skshaper skunicode skparagraph; do
+            [ -d modules/$m/include ] && cp -r modules/$m/include ../pkg/include/modules/$m
+          done
+          cd ..
+          git -C skia rev-parse HEAD > pkg/SKIA_COMMIT.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: skia-linux-x86_64
+          path: pkg
