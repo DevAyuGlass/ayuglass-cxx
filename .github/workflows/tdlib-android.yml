@@ -1,0 +1,89 @@
+name: tdlib-android
+
+on:
+  workflow_dispatch:
+
+env:
+  API_LEVEL: 24
+  OPENSSL_VERSION: 3.0.15   # LTS-ветка 3.0.x, при желании подними на свежий патч
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            openssl_target: android-arm64
+          - abi: armeabi-v7a
+            openssl_target: android-arm
+          - abi: x86_64
+            openssl_target: android-x86_64
+
+    steps:
+      - name: Install host deps
+        run: sudo apt-get update && sudo apt-get install -y gperf cmake ninja-build zlib1g-dev libssl-dev
+
+      - name: Locate NDK
+        run: |
+          echo "NDK=${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_ROOT}" >> "$GITHUB_ENV"
+
+      - name: Clone TDLib
+        run: git clone --depth 1 https://github.com/tdlib/td.git
+
+      # ---------- OpenSSL под Android ----------
+      - name: Build OpenSSL (${{ matrix.abi }})
+        run: |
+          set -e
+          curl -fsSL -o openssl.tar.gz \
+            "https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz"
+          tar xf openssl.tar.gz
+          cd "openssl-${OPENSSL_VERSION}"
+          export ANDROID_NDK_ROOT="$NDK"
+          export PATH="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
+          ./Configure ${{ matrix.openssl_target }} -D__ANDROID_API__=${API_LEVEL} \
+            no-shared no-tests no-apps \
+            --prefix="$GITHUB_WORKSPACE/openssl/${{ matrix.abi }}" --libdir=lib
+          make -j"$(nproc)"
+          make install_sw
+
+      # ---------- Хостовая часть (генерация кода для кросс-компиляции) ----------
+      - name: TDLib host build (prepare_cross_compiling)
+        run: |
+          set -e
+          cd td
+          mkdir build-host && cd build-host
+          cmake -GNinja -DCMAKE_BUILD_TYPE=Release ..
+          cmake --build . --target prepare_cross_compiling -j"$(nproc)"
+
+      # ---------- TDLib под нужную ABI ----------
+      - name: TDLib cross build (${{ matrix.abi }})
+        run: |
+          set -e
+          cd td
+          mkdir build-${{ matrix.abi }} && cd build-${{ matrix.abi }}
+          OSSL="$GITHUB_WORKSPACE/openssl/${{ matrix.abi }}"
+          cmake -GNinja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=${{ matrix.abi }} \
+            -DANDROID_PLATFORM=android-${API_LEVEL} \
+            -DOPENSSL_ROOT_DIR="$OSSL" \
+            -DOPENSSL_INCLUDE_DIR="$OSSL/include" \
+            -DOPENSSL_CRYPTO_LIBRARY="$OSSL/lib/libcrypto.a" \
+            -DOPENSSL_SSL_LIBRARY="$OSSL/lib/libssl.a" \
+            -DOPENSSL_USE_STATIC_LIBS=ON \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/${{ matrix.abi }}" \
+            ..
+          cmake --build . --target install -j"$(nproc)"
+
+      # кладём OpenSSL рядом, чтобы find_package(OpenSSL) в твоём проекте нашёл его
+      - name: Bundle OpenSSL into install
+        run: |
+          mkdir -p install/${{ matrix.abi }}/openssl
+          cp -r openssl/${{ matrix.abi }}/include openssl/${{ matrix.abi }}/lib install/${{ matrix.abi }}/openssl/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tdlib-${{ matrix.abi }}
+          path: install/${{ matrix.abi }}
