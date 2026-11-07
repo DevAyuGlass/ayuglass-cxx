@@ -43,7 +43,7 @@ jobs:
           export ANDROID_NDK_ROOT="$NDK"
           export PATH="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
           ./Configure ${{ matrix.openssl_target }} -D__ANDROID_API__=${API_LEVEL} \
-            no-shared  no-apps \
+            no-shared  no-tests \
             --prefix="$GITHUB_WORKSPACE/openssl/${{ matrix.abi }}" --libdir=lib
           make -j"$(nproc)"
           make install_sw
