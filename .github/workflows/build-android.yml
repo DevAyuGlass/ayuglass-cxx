@@ -110,6 +110,7 @@ jobs:
           TG_API_ID: ${{ github.event.repository.private && secrets.TG_API_ID || '' }}
           TG_API_HASH: ${{ github.event.repository.private && secrets.TG_API_HASH || '' }}
         run: |
+          set -o pipefail   # без этого код возврата берётся от tee и падение Gradle маскируется
           cd android-build
           chmod +x gradlew
           # повторяем при сетевых сбоях (например, 504 при скачивании Gradle)
@@ -133,3 +134,4 @@ jobs:
         with:
           name: ayuglass-debug-apk
           path: android-build/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
