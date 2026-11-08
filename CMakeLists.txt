@@ -44,6 +44,8 @@ target_link_libraries(core PUBLIC Td::TdStatic)
 
 # --- Skia (готовые статики из Actions) ---
 file(GLOB SKIA_LIBS ${SKIA_DIR}/lib/*.a)
+# PartitionAlloc (подмена malloc/free) приложению не нужен и требует флагов --wrap
+list(FILTER SKIA_LIBS EXCLUDE REGEX "/lib(allocator_|raw_ptr)")
 if(NOT SKIA_LIBS)
   message(FATAL_ERROR "Не найдены ${SKIA_DIR}/lib/*.a, задай -DSKIA_DIR=...")
 endif()

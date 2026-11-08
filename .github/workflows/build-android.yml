@@ -76,6 +76,9 @@ jobs:
           # Подменяем app/build.gradle на свой: CMake, minSdk 24, три ABI.
           NS=$(grep -oP "namespace\s*['\"]\K[^'\"]+" app/build.gradle | head -1)
           echo "namespace из шаблона: $NS"
+          # NDK должен совпадать с тем, которым собраны TDLib и Skia (оба брали ANDROID_NDK_LATEST_HOME)
+          NDKV=$(basename "${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_ROOT}")
+          echo "NDK: $NDKV"
           test -f app/src/main/java/org/libsdl/app/SDLActivity.java || { echo "нет SDLActivity.java в шаблоне"; find . -name SDLActivity.java; exit 1; }
           cp app/build.gradle app/build.gradle.orig
           cat > app/build.gradle <<EOF
@@ -83,6 +86,7 @@ jobs:
 
           android {
               namespace "$NS"
+              ndkVersion "$NDKV"
               compileSdk 34
               defaultConfig {
                   applicationId "org.ayuglass.app"
