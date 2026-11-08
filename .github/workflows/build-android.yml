@@ -101,7 +101,15 @@ jobs:
           # повторяем при сетевых сбоях (например, 504 при скачивании Gradle)
           for i in 1 2 3; do
             ./gradlew assembleDebug --no-daemon && exit 0
-            echo "попытка $i не удалась"; sleep 20
+            echo "попытка $i не удалась"
+            if [ "$i" = "1" ]; then
+              # запасной вариант: качаем дистрибутив Gradle с зеркала, а не с GitHub
+              V=$(grep -o 'gradle-[0-9.]*-bin.zip' gradle/wrapper/gradle-wrapper.properties | head -1)
+              sed -i '/^distributionUrl=/d' gradle/wrapper/gradle-wrapper.properties
+              echo "distributionUrl=https\://mirrors.cloud.tencent.com/gradle/$V" >> gradle/wrapper/gradle-wrapper.properties
+              echo "переключились на зеркало: $V"
+            fi
+            sleep 30
           done
           exit 1
 
