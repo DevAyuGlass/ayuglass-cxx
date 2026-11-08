@@ -39,6 +39,20 @@ jobs:
           done
           ls -l openssl/*/lib/libssl.a
 
+      - name: Skia extra headers (skcms) из исходников того же коммита
+        run: |
+          set -e
+          SHA=$(cat deps/skia/arm64-v8a/SKIA_COMMIT.txt)
+          git clone --depth 1 --no-checkout https://skia.googlesource.com/skia.git skia-hdr
+          cd skia-hdr
+          git sparse-checkout set modules/skcms
+          if git fetch --depth 1 origin "$SHA"; then git checkout -q FETCH_HEAD; else echo "SHA недоступен, берём HEAD"; git checkout -q HEAD; fi
+          ls modules/skcms | head
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            mkdir -p ../deps/skia/$abi/modules
+            cp -r modules/skcms ../deps/skia/$abi/modules/
+          done
+
       - name: Fetch SDL3 (исходники и Android-шаблон)
         run: git clone --depth 1 --branch "$SDL_TAG" https://github.com/libsdl-org/SDL.git SDL3-src
 
@@ -100,8 +114,10 @@ jobs:
           chmod +x gradlew
           # повторяем при сетевых сбоях (например, 504 при скачивании Gradle)
           for i in 1 2 3; do
-            ./gradlew assembleDebug --no-daemon && exit 0
+            if ./gradlew assembleDebug --no-daemon 2>&1 | tee gradle.log; then exit 0; fi
             echo "попытка $i не удалась"
+            # повторяем только сетевые сбои, ошибки компиляции повторять бессмысленно
+            grep -q -E "HTTP response code|Could not (GET|HEAD|resolve|download)|Read timed out|Connection (reset|timed out)" gradle.log || exit 1
             if [ "$i" = "1" ]; then
               # запасной вариант: качаем дистрибутив Gradle с зеркала, а не с GitHub
               V=$(grep -o 'gradle-[0-9.]*-bin.zip' gradle/wrapper/gradle-wrapper.properties | head -1)

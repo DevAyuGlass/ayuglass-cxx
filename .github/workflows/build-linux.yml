@@ -1,0 +1,67 @@
+name: build-linux
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ["src/**", "core/**", "CMakeLists.txt", ".github/workflows/build-linux.yml"]
+
+env:
+  SDL_TAG: release-3.2.0   # можно поднять на свежий релиз SDL3
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang libssl-dev zlib1g-dev \
+            libfontconfig1-dev libgl1-mesa-dev libegl1-mesa-dev libdrm-dev libgbm-dev \
+            libx11-dev libxext-dev libxcursor-dev libxi-dev libxrandr-dev libxss-dev \
+            libwayland-dev libxkbcommon-dev wayland-protocols libdecor-0-dev \
+            libpulse-dev libasound2-dev
+
+      - name: Download prebuilt TDLib and Skia
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          mkdir -p deps/tdlib deps/skia
+          gh release download deps -p "tdlib-linux-x86_64.tar.gz" -D deps
+          gh release download deps -p "skia-linux-x86_64.tar.gz" -D deps
+          tar -xzf deps/tdlib-linux-x86_64.tar.gz -C deps/tdlib
+          tar -xzf deps/skia-linux-x86_64.tar.gz -C deps/skia
+
+      - name: Skia extra headers (skcms) из исходников того же коммита
+        run: |
+          set -e
+          SHA=$(cat deps/skia/SKIA_COMMIT.txt)
+          git clone --depth 1 --no-checkout https://skia.googlesource.com/skia.git skia-hdr
+          cd skia-hdr
+          git sparse-checkout set modules/skcms
+          if git fetch --depth 1 origin "$SHA"; then git checkout -q FETCH_HEAD; else echo "SHA недоступен, берём HEAD"; git checkout -q HEAD; fi
+          mkdir -p ../deps/skia/modules
+          cp -r modules/skcms ../deps/skia/modules/
+
+      - name: Fetch SDL3
+        run: git clone --depth 1 --branch "$SDL_TAG" https://github.com/libsdl-org/SDL.git SDL3-src
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DTd_DIR="$PWD/deps/tdlib/lib/cmake/Td" \
+            -DSKIA_DIR="$PWD/deps/skia" \
+            -DSDL3_SOURCE_DIR="$PWD/SDL3-src" \
+            -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST_LIBRARY=OFF
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ayuglass-linux-x86_64
+          path: build/ayuglass
