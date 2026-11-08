@@ -53,11 +53,34 @@ jobs:
           add_subdirectory("$ENV{APP_SRC}" ayuglass)
           EOF
           cd android-build
-          sed -i 's/com\.gamemaker\.game"/org.ayuglass.app"/' app/build.gradle || true
-          # у нас нет сборок под 32-битный x86
-          sed -i "s/abiFilters .*/abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'/" app/build.gradle
-          echo "--- build.gradle (ключевые строки) ---"
-          grep -n -E "abiFilters|applicationId|namespace|ndkVersion|arguments" app/build.gradle || true
+          # Шаблон SDL по умолчанию собирает через ndk-build (Android.mk, android-19).
+          # Подменяем app/build.gradle на свой: CMake, minSdk 24, три ABI.
+          NS=$(grep -oP "namespace\s*['\"]\K[^'\"]+" app/build.gradle | head -1)
+          echo "namespace из шаблона: $NS"
+          test -f app/src/main/java/org/libsdl/app/SDLActivity.java || { echo "нет SDLActivity.java в шаблоне"; find . -name SDLActivity.java; exit 1; }
+          cp app/build.gradle app/build.gradle.orig
+          cat > app/build.gradle <<EOF
+          apply plugin: 'com.android.application'
+
+          android {
+              namespace "$NS"
+              compileSdk 34
+              defaultConfig {
+                  applicationId "org.ayuglass.app"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "0.1"
+                  ndk { abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64' }
+                  externalNativeBuild {
+                      cmake { arguments "-DANDROID_PLATFORM=android-24", "-DANDROID_STL=c++_static" }
+                  }
+              }
+              externalNativeBuild {
+                  cmake { path 'jni/CMakeLists.txt' }
+              }
+          }
+          EOF
 
       - name: Build APK
         env:
@@ -70,7 +93,12 @@ jobs:
         run: |
           cd android-build
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          # повторяем при сетевых сбоях (например, 504 при скачивании Gradle)
+          for i in 1 2 3; do
+            ./gradlew assembleDebug --no-daemon && exit 0
+            echo "попытка $i не удалась"; sleep 20
+          done
+          exit 1
 
       - uses: actions/upload-artifact@v4
         with:
