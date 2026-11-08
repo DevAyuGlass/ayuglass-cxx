@@ -67,3 +67,9 @@ target_link_libraries(ayuglass PRIVATE
   core SDL3::SDL3
   -Wl,--start-group ${SKIA_LIBS} -Wl,--end-group
   ${PLATFORM_LIBS})
+
+if(ANDROID)
+  # Две копии zlib: в libskia.a (вшит) и в libz.a из NDK (его тянет TDLib).
+  # Символ x86_cpu_enable_avx512 определён в обеих; оставляем первое определение.
+  target_link_options(ayuglass PRIVATE -Wl,--allow-multiple-definition)
+endif()
