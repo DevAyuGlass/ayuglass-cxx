@@ -44,8 +44,6 @@ target_link_libraries(core PUBLIC Td::TdStatic)
 
 # --- Skia (готовые статики из Actions) ---
 file(GLOB SKIA_LIBS ${SKIA_DIR}/lib/*.a)
-# PartitionAlloc (подмена malloc/free) приложению не нужен и требует флагов --wrap
-list(FILTER SKIA_LIBS EXCLUDE REGEX "/lib(allocator_|raw_ptr)")
 if(NOT SKIA_LIBS)
   message(FATAL_ERROR "Не найдены ${SKIA_DIR}/lib/*.a, задай -DSKIA_DIR=...")
 endif()
@@ -71,6 +69,9 @@ target_link_libraries(ayuglass PRIVATE
   ${PLATFORM_LIBS})
 
 if(ANDROID)
+  # Skia собрана с PartitionAlloc: его shim ссылается на __real_free/realpath/getcwd (цели --wrap).
+  # Флаги --wrap мы не передаём, shim не активен; даём заглушки, вызывающие libc.
+  target_sources(ayuglass PRIVATE src/pa_stubs.cpp)
   # Две копии zlib: в libskia.a (вшит) и в libz.a из NDK (его тянет TDLib).
   # Символ x86_cpu_enable_avx512 определён в обеих; оставляем первое определение.
   target_link_options(ayuglass PRIVATE -Wl,--allow-multiple-definition)
