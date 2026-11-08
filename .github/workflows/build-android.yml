@@ -32,7 +32,12 @@ jobs:
             gh release download deps -p "skia-android-$abi.tar.gz" -D deps
             tar -xzf deps/tdlib-android-$abi.tar.gz -C deps/tdlib/$abi
             tar -xzf deps/skia-android-$abi.tar.gz -C deps/skia/$abi
+            # Td при установке запомнил абсолютный путь к OpenSSL со сборки TDLib:
+            # $GITHUB_WORKSPACE/openssl/<abi>/lib/libssl.a. Воссоздаём его симлинком.
+            mkdir -p openssl
+            ln -sfn "$PWD/deps/tdlib/$abi/openssl" "openssl/$abi"
           done
+          ls -l openssl/*/lib/libssl.a
 
       - name: Fetch SDL3 (исходники и Android-шаблон)
         run: git clone --depth 1 --branch "$SDL_TAG" https://github.com/libsdl-org/SDL.git SDL3-src
